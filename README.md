@@ -162,7 +162,7 @@ data/clean_sequences.fasta
 
 Use the script below to convert an Excel file into FASTA.
 
-Create `scripts/excel_to_fasta.py`:
+USE `scripts/excel_to_fasta.py`:
 
 ```python
 
@@ -206,11 +206,11 @@ Other modes:
 ## Step 6 — Automate as a Python Pipeline
 
 
-
-Run it from VS Code:
+Configure fasta path and bold db path in script and
+run it:
 
 ```bash
-python scripts/run_bold_pipeline.py
+python scripts/run_bold_identification.py
 ```
 
 ---
@@ -236,7 +236,7 @@ You can load the Excel results with pandas:
 ```python
 import pandas as pd
 
-df = pd.read_excel("results/your_results.xlsx")
+df = pd.read_excel("results/.xlsx")
 print(df.head())
 ```
 

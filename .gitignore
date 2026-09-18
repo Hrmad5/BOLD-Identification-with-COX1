@@ -26,6 +26,17 @@ dist/
 # JetBrains IDE
 .idea/
 
+# DuckDB files
+*.ddb
+*.duckdb
+
+# Excel files
+*.xlsx
+
+# Parquet files
+*.parquet
+*.snappy
+
 # Unit test reports
 TEST*.xml
 
