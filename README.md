@@ -1,50 +1,51 @@
-**Edit a file, create a new file, and clone from Bitbucket in under 2 minutes**
+# Bee and Bumblebee COI Identification Pipeline
 
-When you're done, you can delete the content in this README and update the file with details for others getting started with your repository.
-
-*We recommend that you open this README in another tab as you perform the tasks below. You can [watch our video](https://youtu.be/0ocf7u76WSo) for a full demo of all the steps in this tutorial. Open the video in a new tab to avoid leaving Bitbucket.*
+A Python-based workflow for processing AB1 files, generating clean FASTA sequences, and identifying bee/bumblebee species through BOLD using **BOLDigger3**.
 
 ---
 
-## Edit a file
+## Overview
 
-You’ll start by editing this README file to learn how to edit a file in Bitbucket.
+This project handles the final stages of a DNA barcoding pipeline:
 
-1. Click **Source** on the left side.
-2. Click the README.md link from the list of files.
-3. Click the **Edit** button.
-4. Delete the following text: *Delete this line to make a change to the README from Bitbucket.*
-5. After making your change, click **Commit** and then **Commit** again in the dialog. The commit page will open and you’ll see the change you just made.
-6. Go back to the **Source** page.
+1. Convert raw AB1 files (LCO/HCO reads) into clean consensus FASTA sequences.
+2. Optionally convert sequences stored in Excel into FASTA format.
+3. Query BOLD's identification engine automatically with **BOLDigger3**.
+4. Review species-level identifications for bees and bumblebees.
 
----
-
-## Create a file
-
-Next, you’ll add a new file to this repository.
-
-1. Click the **New file** button at the top of the **Source** page.
-2. Give the file a filename of **contributors.txt**.
-3. Enter your name in the empty file space.
-4. Click **Commit** and then **Commit** again in the dialog.
-5. Go back to the **Source** page.
-
-Before you move on, go ahead and explore the repository. You've already seen the **Source** page, but check out the **Commits**, **Branches**, and **Settings** pages.
+BOLDigger3 is used as the BOLD search engine inside a larger Python pipeline. It handles BOLD batch limits, rate limits, database access, and result formatting.
 
 ---
 
-## Clone a repository
+## Workflow Summary
 
-Use these steps to clone from SourceTree, our client for using the repository command-line free. Cloning allows you to work on your files locally. If you don't yet have SourceTree, [download and install first](https://www.sourcetreeapp.com/). If you prefer to clone from the command line, see [Clone a repository](https://confluence.atlassian.com/x/4whODQ).
+```text
+AB1 files (LCO + HCO)
+        │
+        ▼
+Clean consensus FASTA
+        │
+        ▼
+[Optional] Excel → FASTA conversion
+        │
+        ▼
+BOLDigger3 identification against BOLD
+        │
+        ▼
+Results: .xlsx / .parquet files
+```
 
-1. You’ll see the clone button under the **Source** heading. Click that button.
-2. Now click **Check out in SourceTree**. You may need to create a SourceTree account or log in.
-3. When you see the **Clone New** dialog in SourceTree, update the destination path and name if you’d like to and then click **Clone**.
-4. Open the directory you just created to see your repository’s files.
+---
 
-<<<<<<< Updated upstream
-Now that you're more familiar with your Bitbucket repository, go ahead and add a new file locally. You can [push your change back to Bitbucket with SourceTree](https://confluence.atlassian.com/x/iqyBMg), or you can [add, commit,](https://confluence.atlassian.com/x/8QhODQ) and [push from the command line](https://confluence.atlassian.com/x/NQ0zDQ).
-=======
+## Requirements
+
+- Python **3.11 or higher**
+- VS Code
+- Free BOLD account: https://www.boldsystems.org
+- Input sequences in FASTA format, or Excel with ID and sequence columns
+
+Python packages:
+
 ```bash
 pip install boldigger3 pandas biopython openpyxl
 ```
@@ -160,10 +161,64 @@ data/clean_sequences.fasta
 ### Option B — Sequences are stored in Excel
 
 Use the script below to convert an Excel file into FASTA.
- `scripts/excel_to_fasta.py`:
+
+Create `scripts/excel_to_fasta.py`:
+
+```python
+import pandas as pd
+from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 
+def excel_to_fasta(excel_path, fasta_path, id_col, seq_col, sheet_name=0):
+    """
+    Convert sequences from an Excel file to a FASTA file.
 
+    Parameters:
+    - excel_path: path to input Excel file
+    - fasta_path: path to output FASTA file
+    - id_col: column name containing sequence IDs
+    - seq_col: column name containing DNA sequences
+    - sheet_name: sheet name or index, default 0
+    """
+    try:
+        df = pd.read_excel(excel_path, sheet_name=sheet_name)
+        records = []
+
+        for index, row in df.iterrows():
+            seq_id = str(row[id_col]).strip()
+            sequence = str(row[seq_col]).strip()
+
+            if not seq_id or not sequence:
+                print(f"Skipping row {index + 2}: missing ID or sequence.")
+                continue
+
+            record = SeqRecord(Seq(sequence), id=seq_id, description="")
+            records.append(record)
+
+        if records:
+            SeqIO.write(records, fasta_path, "fasta")
+            print(f"Wrote {len(records)} sequences to {fasta_path}")
+        else:
+            print("No valid sequences found.")
+
+    except FileNotFoundError:
+        print(f"Error: file not found: {excel_path}")
+    except KeyError as e:
+        print(f"Error: column not found: {e}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+
+if __name__ == "__main__":
+    INPUT_EXCEL = "data/sequences.xlsx"
+    OUTPUT_FASTA = "data/clean_sequences.fasta"
+    ID_COLUMN = "Sample_ID"
+    SEQUENCE_COLUMN = "Sequence"
+    SHEET = 0
+
+    excel_to_fasta(INPUT_EXCEL, OUTPUT_FASTA, ID_COLUMN, SEQUENCE_COLUMN, SHEET)
 ```
 
 Update the configuration at the bottom with your real file paths and column names.
@@ -201,6 +256,74 @@ Other modes:
 
 ## Step 6 — Automate as a Python Pipeline
 
+Create `scripts/run_bold_pipeline.py` to run the full workflow automatically.
+
+```python
+import subprocess
+import os
+import sys
+
+
+# Paths
+INPUT_EXCEL = "data/sequences.xlsx"
+CLEAN_FASTA = "data/clean_sequences.fasta"
+BOLD_DB_PATH = "bold_db"
+RESULTS_OUTPUT_DIR = "results"
+
+
+def excel_to_fasta(excel_path, fasta_path):
+    """
+    Optional: call your Excel-to-FASTA conversion here.
+    You can import the function from excel_to_fasta.py instead.
+    """
+    from excel_to_fasta import excel_to_fasta as convert
+
+    convert(
+        excel_path=excel_path,
+        fasta_path=fasta_path,
+        id_col="Sample_ID",
+        seq_col="Sequence",
+        sheet_name=0,
+    )
+
+
+def run_bold_identification():
+    os.makedirs(RESULTS_OUTPUT_DIR, exist_ok=True)
+
+    command = [
+        "boldigger3",
+        "identify",
+        CLEAN_FASTA,
+        BOLD_DB_PATH,
+        "--db", "1",
+        "--mode", "2",
+    ]
+
+    try:
+        result = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print("BOLD identification completed successfully.")
+        print(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print("Error during BOLD identification:")
+        print(e.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    print("Step 1: Converting Excel to FASTA...")
+    excel_to_fasta(INPUT_EXCEL, CLEAN_FASTA)
+
+    print("Step 2: Running BOLD identification...")
+    run_bold_identification()
+
+    print("Step 3: Pipeline finished.")
+    print(f"Results are in: {RESULTS_OUTPUT_DIR}")
+```
 
 Run it from VS Code:
 
@@ -297,4 +420,3 @@ Check:
 - pandas: https://pandas.pydata.org
 
 ---
->>>>>>> Stashed changes
