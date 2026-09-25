@@ -33,6 +33,14 @@ dist/
 # Excel files
 *.xlsx
 
+# Fasta files
+*.fasta
+
+# Some of scripts
+main.ipynb
+primers.py
+excel_to_fasta.py
+
 # Parquet files
 *.parquet
 *.snappy
